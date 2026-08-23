@@ -14,4 +14,14 @@ transactionRoutes.post(
   transactionController.createTransaction,
 );
 
+/**
+ * - POST /api/transactions/system/initials-funds
+ * - Create Inital funds transactions from system user
+ */
+transactionRoutes.post(
+  "/system/initial-funds",
+  authMiddleware.authSystemUserMiddleware,
+  transactionController.createInitialFundsTransaction,
+);
+
 module.exports = transactionRoutes;

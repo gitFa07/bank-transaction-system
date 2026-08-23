@@ -3,6 +3,7 @@ const ledgerModel = require("../models/ledger.model");
 const accountModel = require("../models/account.model");
 const emailService = require("../services/email.service");
 const mongoose = require("mongoose");
+const { response } = require("express");
 
 /**
  * - Create new Transaction
@@ -159,6 +160,84 @@ async function createTransaction(req, res) {
   });
 }
 
+async function createInitialFundsTransaction(req, res) {
+  const { toAccount, amount, idempotencyKey } = req.body;
+
+  if (!toAccount || !amount || !idempotencyKey) {
+    return res.status(400).json({
+      response: "toAccount, amount, idenpotencyKey are required",
+    });
+  }
+
+  const toUserAccount = await accountModel.findOne({
+    _id: toAccount,
+  });
+
+  if (!toUserAccount) {
+    return res.status(400).json({
+      response: "Invalid toAccount",
+    });
+  }
+
+  const fromUserAccount = await accountModel.findOne({
+    //systemUser: true,
+    user: req.user._id,
+  });
+
+  if (!fromUserAccount) {
+    return res.status(400).json({
+      response: "System user account not found",
+    });
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  const transaction = new transactionModel({
+    fromAccount: fromUserAccount._id,
+    toAccount,
+    amount,
+    idempotencyKey,
+    status: "PENDING",
+  });
+
+  const debitLedgerEntries = await ledgerModel.create(
+    [
+      {
+        account: fromUserAccount._id,
+        amount: amount,
+        transaction: transaction._id,
+        type: "DEBIT",
+      },
+    ],
+    { session },
+  );
+
+  const creditLedgerEntries = await ledgerModel.create(
+    [
+      {
+        account: toAccount,
+        amount: amount,
+        transaction: transaction._id,
+        type: "CREDIT",
+      },
+    ],
+    { session },
+  );
+
+  transaction.status = "COMPLETED";
+  await transaction.save({ session });
+
+  await session.commitTransaction();
+  session.endSession();
+
+  return res.status(200).json({
+    message: "Initial funds transaction completed successfully",
+    transaction: transaction,
+  });
+}
+
 module.exports = {
   createTransaction,
+  createInitialFundsTransaction,
 };
